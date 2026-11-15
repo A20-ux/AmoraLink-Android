@@ -2,6 +2,8 @@ package com.amoralink.app
 
 import android.app.Activity
 import android.os.Bundle
+import android.content.Intent
+import android.provider.Settings
 import android.graphics.Color
 import android.view.View
 import android.widget.LinearLayout
@@ -27,7 +29,15 @@ class MainActivity : Activity() {
         root.addView(space(28))
 
         addCard(root, "AI Companions", "Manage your connected AI companions")
-        addCard(root, "Usage Access", "Allow Amora Link to understand app usage")
+
+        addCard(
+            root,
+            "Usage Access",
+            "Tap to open app usage permission settings"
+        ) {
+            startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
+        }
+
         addCard(root, "Smart Reminders", "Receive helpful interaction reminders")
         addCard(root, "App Management", "Manage your companion app preferences")
 
@@ -39,11 +49,22 @@ class MainActivity : Activity() {
         setContentView(root)
     }
 
-    private fun addCard(root: LinearLayout, title: String, description: String) {
+    private fun addCard(
+        root: LinearLayout,
+        title: String,
+        description: String,
+        onClick: (() -> Unit)? = null
+    ) {
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(18, 18, 18, 18)
             setBackgroundColor(cardColor)
+
+            if (onClick != null) {
+                isClickable = true
+                isFocusable = true
+                setOnClickListener { onClick() }
+            }
         }
 
         card.addView(text(title, 19f, Color.WHITE))
