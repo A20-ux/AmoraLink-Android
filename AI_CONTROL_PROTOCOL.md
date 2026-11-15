@@ -32,3 +32,17 @@
 - AI_LOCK 只能指定 Amora Link ‮选已‬择的陪‮应伴‬用。
 - ‮户用‬仍可使用 Amora Link 的‮急紧‬解锁功能。
 - 当前‮本版‬尚未实现云‮指端‬令传输。
+
+## Remote message adapter
+
+RemoteCommandRouter is the provider-independent command entry point.
+
+A future push provider adapter should:
+1. Receive the provider message.
+2. Extract its string data fields.
+3. Call RemoteCommandRouter.dispatch(context, payload).
+4. Never log or expose auth_token.
+5. Report only the command result, without exposing secrets.
+
+This router does not create a network connection or receive push messages
+by itself. A Huawei Push Kit, FCM, or other provider adapter is still required.
