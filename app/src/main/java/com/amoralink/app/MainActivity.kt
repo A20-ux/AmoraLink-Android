@@ -3,7 +3,6 @@ package com.amoralink.app
 import android.app.Activity
 import android.os.Bundle
 import android.graphics.Color
-import android.view.Gravity
 import android.view.View
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -23,8 +22,8 @@ class MainActivity : Activity() {
             setBackgroundColor(backgroundColor)
         }
 
-        root.addView(text("Amora Link", 32, Color.WHITE))
-        root.addView(text("Your AI Companion Connection", 14, accentColor))
+        root.addView(text("Amora Link", 32f, Color.WHITE))
+        root.addView(text("Your AI Companion Connection", 14f, accentColor))
         root.addView(space(28))
 
         addCard(root, "AI Companions", "Manage your connected AI companions")
@@ -34,11 +33,7 @@ class MainActivity : Activity() {
 
         root.addView(space(24))
         root.addView(
-            text(
-                "Your connections. Your choices. Your control.",
-                13,
-                Color.LTGRAY
-            )
+            text("Your connections. Your choices. Your control.", 13f, Color.LTGRAY)
         )
 
         setContentView(root)
@@ -51,9 +46,9 @@ class MainActivity : Activity() {
             setBackgroundColor(cardColor)
         }
 
-        card.addView(text(title, 19, Color.WHITE))
+        card.addView(text(title, 19f, Color.WHITE))
         card.addView(space(8))
-        card.addView(text(description, 13, Color.LTGRAY))
+        card.addView(text(description, 13f, Color.LTGRAY))
 
         val params = LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT,
