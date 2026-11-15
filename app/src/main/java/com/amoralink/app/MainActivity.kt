@@ -10,6 +10,7 @@ import android.view.View
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Button
+import android.widget.ScrollView
 
 class MainActivity : Activity() {
 
@@ -21,41 +22,40 @@ class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        val root = LinearLayout(this).apply {
+        val content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(24, 40, 24, 24)
             setBackgroundColor(backgroundColor)
         }
 
-        root.addView(text("Amora Link", 32f, Color.WHITE))
-        root.addView(text("Your AI Companion Connection", 14f, accentColor))
-        root.addView(space(28))
+        content.addView(text("Amora Link", 32f, Color.WHITE))
+        content.addView(text("Your AI Companion Connection", 14f, accentColor))
+        content.addView(space(24))
 
-        addCard(root, "AI Companions", "Manage your connected AI companions")
+        addCard(content, "AI Companions", "Manage your connected AI companions")
 
-        addCard(root, "Usage Access", "Tap to open app usage permission settings") {
+        addCard(content, "Usage Access", "Open app usage permission settings") {
             startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
         }
 
-        addCard(root, "Smart Reminders", "Receive helpful interaction reminders")
-        addCard(root, "App Management", "Manage your companion app preferences")
+        addCard(content, "Smart Reminders", "Receive helpful interaction reminders")
+        addCard(content, "App Management", "Manage your companion app preferences")
 
-        root.addView(space(18))
+        content.addView(space(16))
 
-        val readButton = Button(this).apply {
+        content.addView(Button(this).apply {
             text = "读取最近 24 小时使用记录"
             setOnClickListener { readUsageRecords() }
+        })
+
+        content.addView(space(12))
+        resultText = text("点击按钮查看手机应用使用时间。", 14f, Color.WHITE)
+        content.addView(resultText)
+
+        val scroll = ScrollView(this).apply {
+            addView(content)
         }
-        root.addView(readButton)
-
-        root.addView(space(12))
-        resultText = text("点击上方按钮，查看手机应用使用记录。", 14f, Color.WHITE)
-        root.addView(resultText)
-
-        root.addView(space(24))
-        root.addView(text("Your connections. Your choices. Your control.", 13f, Color.LTGRAY))
-
-        setContentView(root)
+        setContentView(scroll)
     }
 
     private fun readUsageRecords() {
@@ -71,33 +71,43 @@ class MainActivity : Activity() {
             )
 
             if (records.isNullOrEmpty()) {
-                resultText.text = "暂时没有读取到记录。请确认 Amora Link 的“使用情况访问”权限已开启，然后再试一次。"
+                resultText.text = "系统没有返回使用记录。请检查 Amora Link 的使用情况访问权限。"
                 return
             }
 
             val lines = records
                 .filter { it.totalTimeInForeground > 0 }
                 .sortedByDescending { it.totalTimeInForeground }
-                .take(15)
-                .mapNotNull { record ->
-                    try {
-                        val appName = packageManager.getApplicationLabel(
+                .map { record ->
+                    val appName = try {
+                        packageManager.getApplicationLabel(
                             packageManager.getApplicationInfo(record.packageName, 0)
-                        )
-                        val minutes = record.totalTimeInForeground / 60000
-                        "$appName：约 $minutes 分钟"
+                        ).toString()
                     } catch (_: Exception) {
-                        null
+                        record.packageName
                     }
+
+                    val minutes = record.totalTimeInForeground / 60000
+                    val hours = minutes / 60
+                    val remainingMinutes = minutes % 60
+
+                    val duration = if (hours > 0) {
+                        "${hours}小时${remainingMinutes}分钟"
+                    } else {
+                        "${minutes}分钟"
+                    }
+
+                    "$appName\n使用时间：$duration"
                 }
 
             resultText.text = if (lines.isEmpty()) {
-                "最近 24 小时暂时没有可显示的应用记录。"
+                "最近 24 小时没有可显示的应用使用记录。"
             } else {
-                "最近 24 小时应用使用记录：\n\n" + lines.joinToString("\n")
+                "最近 24 小时应用使用记录：\n\n" +
+                    lines.joinToString("\n\n")
             }
         } catch (e: Exception) {
-            resultText.text = "读取失败：${e.message ?: "请稍后重试"}"
+            resultText.text = "读取失败：${e.message ?: "未知错误"}"
         }
     }
 
