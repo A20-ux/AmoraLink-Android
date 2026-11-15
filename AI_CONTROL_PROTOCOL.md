@@ -46,3 +46,21 @@ A future push provider adapter should:
 
 This router does not create a network connection or receive push messages
 by itself. A Huawei Push Kit, FCM, or other provider adapter is still required.
+
+## Push provider interface
+
+PushProvider defines a common interface for future push services.
+
+PushRegistrationStore stores the selected provider name, device token,
+registration status, and token update time.
+
+Current status:
+- Provider interface: implemented.
+- Local registration storage: implemented.
+- Huawei Push Kit adapter: not yet implemented.
+- Firebase adapter: not yet implemented.
+- Cloud relay: not yet implemented.
+- Actual remote message delivery: not yet available.
+
+Device push tokens must be sent only to a trusted backend over HTTPS.
+Never place AI pairing secrets in public source code.
