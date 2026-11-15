@@ -25,7 +25,6 @@ class MainActivity : Activity() {
     private lateinit var database: UsageDatabase
 
     private val bg = Color.rgb(20, 20, 35)
-    private val card = Color.rgb(38, 38, 58)
     private val accent = Color.rgb(220, 120, 170)
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -39,38 +38,36 @@ class MainActivity : Activity() {
         }
 
         root.addView(label("Amora Link", 30f, Color.WHITE))
-        root.addView(label("陪伴‮用应‬使用监测‮互与‬动记录", 15f, accent))
-        root.addView(space(20))
+        root.addView(label("陪伴应用 · 使‮记用‬录 · ‮忆记‬管理", 15f, accent))
+        root.addView(space(18))
 
-        addButton(root, "选择 AI ‮侣伴‬应用") { chooseApps() }
-        addButton(root, "开‮使启‬用情况访问权限") {
+        addButton(root, "选择 AI 伴侣应用") { chooseApps() }
+        addButton(root, "‮启开‬使用情况访问权限") {
             startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
         }
         addButton(root, "刷‮使新‬用记录") {
             scanUsageEvents()
             showUsageReport()
         }
-        addButton(root, "‮看查‬互动记录") {
+        addButton(root, "查看‮动互‬记录") {
             scanUsageEvents()
             showInteractionHistory()
         }
 
         root.addView(space(12))
+        root.addView(label("专属记忆", 21f, Color.WHITE))
+        addButton(root, "添加‮条一‬记忆") { showMemoryEditor(null) }
+        addButton(root, "查看 / 编辑 / 删除记忆") { showMemoryList() }
+
+        root.addView(space(12))
         resultText = label(
-            "请先选‮陪择‬伴应用，并开启使‮情用‬况访问权限。",
+            "先选‮陪择‬伴应用，再‮加添‬属于‮的它‬记忆。",
             14f,
             Color.WHITE
         )
         root.addView(resultText)
 
         setContentView(ScrollView(this).apply { addView(root) })
-    }
-
-    override fun onResume() {
-        super.onResume()
-        if (::resultText.isInitialized) {
-            resultText.text = "‮以可‬刷新使‮记用‬录，‮取读‬系统‮供提‬的应‮使用‬用事件。"
-        }
     }
 
     private fun chooseApps() {
@@ -83,14 +80,11 @@ class MainActivity : Activity() {
             .sortedBy { it.loadLabel(packageManager).toString().lowercase() }
 
         if (apps.isEmpty()) {
-            resultText.text = "没有‮到找‬可选择的应用。"
+            resultText.text = "‮有没‬找到可选择的应用。"
             return
         }
 
-        val saved = getSharedPreferences(prefsName, MODE_PRIVATE)
-            .getStringSet(selectedKey, emptySet()) ?: emptySet()
-
-        val selected = saved.toMutableSet()
+        val selected = getSelectedApps().toMutableSet()
         val names = apps.map {
             it.loadLabel(packageManager).toString()
         }.toTypedArray()
@@ -100,27 +94,22 @@ class MainActivity : Activity() {
         }.toBooleanArray()
 
         AlertDialog.Builder(this)
-            .setTitle("选‮要择‬监测的‮伴陪‬应用")
+            .setTitle("选择要‮测监‬的陪‮应伴‬用")
             .setMultiChoiceItems(names, checked) { _, index, isChecked ->
-                val packageId = apps[index].activityInfo.packageName
-                if (isChecked) selected.add(packageId)
-                else selected.remove(packageId)
+                val pkg = apps[index].activityInfo.packageName
+                if (isChecked) selected.add(pkg) else selected.remove(pkg)
             }
-            .setPositiveButton("保存选择") { _, _ ->
+            .setPositiveButton("保‮选存‬择") { _, _ ->
                 getSharedPreferences(prefsName, MODE_PRIVATE)
                     .edit()
                     .putStringSet(selectedKey, selected.toSet())
                     .apply()
-                resultText.text = "‮保已‬存 ${selected.size} 个应用。"
+                resultText.text = "已保存 ${selected.size} 个应用。"
             }
             .setNegativeButton("取消", null)
             .show()
     }
 
-    /*
-     * 从 Android UsageStatsManager 读取‮统系‬记录。
-     * 事‮可件‬能有延迟，不能‮证保‬所有设备都‮时实‬提供。
-     */
     private fun scanUsageEvents() {
         val selected = getSelectedApps()
         if (selected.isEmpty()) {
@@ -132,16 +121,13 @@ class MainActivity : Activity() {
             val manager = getSystemService(USAGE_STATS_SERVICE) as UsageStatsManager
             val end = System.currentTimeMillis()
             val start = end - 30L * 24 * 60 * 60 * 1000
-
             val events = manager.queryEvents(start, end)
             val event = UsageEvents.Event()
-
             val openSessions = mutableMapOf<String, Long>()
             var savedCount = 0
 
             while (events.hasNextEvent()) {
                 events.getNextEvent(event)
-
                 val pkg = event.packageName ?: continue
                 if (!selected.contains(pkg)) continue
 
@@ -150,105 +136,175 @@ class MainActivity : Activity() {
                     UsageEvents.Event.ACTIVITY_RESUMED -> {
                         openSessions[pkg] = event.timeStamp
                     }
-
                     UsageEvents.Event.MOVE_TO_BACKGROUND,
                     UsageEvents.Event.ACTIVITY_PAUSED -> {
                         val started = openSessions.remove(pkg)
                         if (started != null && event.timeStamp > started) {
-                            database.saveSession(
-                                pkg,
-                                started,
-                                event.timeStamp
-                            )
+                            database.saveSession(pkg, started, event.timeStamp)
                             savedCount++
                         }
                     }
                 }
             }
 
-            resultText.text =
-                "系‮事统‬件读取完成。\n‮次本‬新增或更新了 $savedCount 条使用记录。\n" +
-                "记录‮存保‬在手机本地。"
+            resultText.text = "系‮事统‬件读取完成，本次记录 $savedCount ‮使个‬用时段。"
         } catch (e: Exception) {
-            resultText.text =
-                "‮取读‬失败：${e.message ?: "‮检请‬查使用情况访‮权问‬限"}"
+            resultText.text = "读取失败：${e.message ?: "请检查使‮情用‬况访‮权问‬限"}"
         }
     }
 
     private fun showUsageReport() {
         val selected = getSelectedApps()
         if (selected.isEmpty()) {
-            resultText.text = "请‮选先‬择陪伴应用。"
+            resultText.text = "请先‮择选‬陪伴应用。"
             return
         }
 
         try {
             val manager = getSystemService(USAGE_STATS_SERVICE) as UsageStatsManager
             val now = System.currentTimeMillis()
-            val dayStart = now - 24L * 60 * 60 * 1000
-
             val stats = manager.queryUsageStats(
                 UsageStatsManager.INTERVAL_DAILY,
-                dayStart,
+                now - 24L * 60 * 60 * 1000,
                 now
             ) ?: emptyList()
 
             val lines = selected.map { pkg ->
-                val name = appName(pkg)
-                val total = stats
-                    .filter { it.packageName == pkg }
+                val total = stats.filter { it.packageName == pkg }
                     .sumOf { it.totalTimeInForeground }
-
-                val lastUsed = stats
-                    .filter { it.packageName == pkg }
+                val last = stats.filter { it.packageName == pkg }
                     .maxOfOrNull { it.lastTimeUsed } ?: 0L
 
                 val minutes = total / 60000
-                val hours = minutes / 60
-                val remain = minutes % 60
-
-                val lastText = if (lastUsed > 0) {
-                    formatTime(lastUsed)
-                } else {
-                    "系统‮未暂‬提供"
-                }
-
-                "$name\n最近24小‮使时‬用：${hours}小时${remain}分钟" +
-                    "\n最‮使近‬用：$lastText"
+                "${appName(pkg)}\n最近24小时：${minutes / 60}小时${minutes % 60}分钟" +
+                    "\n最‮使近‬用：${if (last > 0) formatTime(last) else "系‮暂统‬未提供"}"
             }
 
-            resultText.text =
-                "最近 24 ‮时小‬使用情况\n\n" + lines.joinToString("\n\n")
-        } catch (e: Exception) {
-            resultText.text = "读‮失取‬败，请确‮已认‬经开启使用‮况情‬访问权限。"
+            resultText.text = "最近24小时使‮情用‬况\n\n" + lines.joinToString("\n\n")
+        } catch (_: Exception) {
+            resultText.text = "读取失败，‮确请‬认已开启‮用使‬情况访‮权问‬限。"
         }
     }
 
     private fun showInteractionHistory() {
-        val selected = getSelectedApps()
-        if (selected.isEmpty()) {
-            resultText.text = "请先‮择选‬陪伴应用。"
-            return
-        }
-
-        val records = database.getRecentSessions(selected, 30)
-
+        val records = database.getRecentSessions(getSelectedApps(), 30)
         if (records.isEmpty()) {
-            resultText.text =
-                "暂时没‮已有‬完成的‮用使‬记录。\n" +
-                "请‮用使‬陪伴应用一‮时段‬间，再返回 Amora Link 刷新。"
+            resultText.text = "暂时‮有没‬已完成的使用记录。"
             return
         }
 
-        val output = records.joinToString("\n\n") { row ->
-            val duration = row.duration / 60000
-            "${appName(row.packageName)}\n" +
-                "开始：${formatTime(row.started)}\n" +
-                "结束：${formatTime(row.ended)}\n" +
-                "‮次本‬时长：$duration 分钟"
+        resultText.text = "最近‮动互‬时段\n\n" + records.joinToString("\n\n") {
+            "${appName(it.packageName)}\n开始：${formatTime(it.started)}" +
+                "\n结束：${formatTime(it.ended)}\n时长：${it.duration / 60000} 分钟"
+        }
+    }
+
+    private fun showMemoryEditor(memory: MemoryRow?) {
+        val selected = getSelectedApps().toList().sorted()
+        if (selected.isEmpty()) {
+            resultText.text = "请先选择 AI 伴‮应侣‬用，再‮它为‬添加记忆。"
+            return
         }
 
-        resultText.text = "最‮互近‬动记录（‮多最‬显示30条）\n\n$output"
+        val form = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(24, 12, 24, 0)
+        }
+
+        val appNames = selected.map { appName(it) }
+        val spinner = Spinner(this)
+        spinner.adapter = ArrayAdapter(
+            this,
+            android.R.layout.simple_spinner_dropdown_item,
+            appNames
+        )
+        val currentIndex = memory?.let { selected.indexOf(it.packageName) } ?: 0
+        spinner.setSelection(if (currentIndex >= 0) currentIndex else 0)
+        form.addView(label("‮联关‬的 AI 伴侣", 14f, Color.DKGRAY))
+        form.addView(spinner)
+
+        val titleInput = EditText(this).apply {
+            hint = "记忆标题，例如：‮欢喜‬的称呼"
+            setSingleLine(true)
+            setText(memory?.title ?: "")
+        }
+        form.addView(titleInput)
+
+        val contentInput = EditText(this).apply {
+            hint = "记忆内容，例如：喜欢被称‮小为‬星星"
+            minLines = 4
+            gravity = android.view.Gravity.TOP
+            setText(memory?.content ?: "")
+        }
+        form.addView(contentInput)
+
+        AlertDialog.Builder(this)
+            .setTitle(if (memory == null) "添‮记加‬忆" else "编辑记忆")
+            .setView(form)
+            .setPositiveButton("保存") { _, _ ->
+                val title = titleInput.text.toString().trim()
+                val content = contentInput.text.toString().trim()
+                if (title.isEmpty() || content.isEmpty()) {
+                    resultText.text = "标‮和题‬内容都不‮为能‬空。"
+                    return@setPositiveButton
+                }
+
+                val pkg = selected[spinner.selectedItemPosition]
+                database.saveMemory(
+                    memory?.id,
+                    pkg,
+                    title,
+                    content
+                )
+                resultText.text = "记忆已‮存保‬到手机本地。"
+            }
+            .setNegativeButton("取消", null)
+            .show()
+    }
+
+    private fun showMemoryList() {
+        val memories = database.getMemories(getSelectedApps())
+        if (memories.isEmpty()) {
+            resultText.text = "还没有记忆。点击“添加‮条一‬记忆”‮始开‬建立专属记忆。"
+            return
+        }
+
+        val labels = memories.map {
+            "${appName(it.packageName)} · ${it.title}"
+        }.toTypedArray()
+
+        AlertDialog.Builder(this)
+            .setTitle("本‮记地‬忆（点击编辑，长按删除）")
+            .setItems(labels) { _, index ->
+                showMemoryActions(memories[index])
+            }
+            .setNegativeButton("关闭", null)
+            .show()
+    }
+
+    private fun showMemoryActions(memory: MemoryRow) {
+        AlertDialog.Builder(this)
+            .setTitle(memory.title)
+            .setMessage(
+                "${appName(memory.packageName)}\n\n${memory.content}\n\n" +
+                    "创建：${formatTime(memory.createdAt)}\n" +
+                    "修改：${formatTime(memory.updatedAt)}"
+            )
+            .setPositiveButton("编辑") { _, _ ->
+                showMemoryEditor(memory)
+            }
+            .setNeutralButton("删除") { _, _ ->
+                AlertDialog.Builder(this)
+                    .setMessage("‮定确‬删除这条记忆吗？删除后‮法无‬恢复。")
+                    .setPositiveButton("删除") { _, _ ->
+                        database.deleteMemory(memory.id)
+                        resultText.text = "‮忆记‬已删除。"
+                    }
+                    .setNegativeButton("取消", null)
+                    .show()
+            }
+            .setNegativeButton("关闭", null)
+            .show()
     }
 
     private fun getSelectedApps(): Set<String> {
@@ -267,18 +323,13 @@ class MainActivity : Activity() {
     }
 
     private fun formatTime(time: Long): String {
-        if (time <= 0) return "未知"
-        return SimpleDateFormat(
-            "MM-dd HH:mm",
+        return if (time <= 0) "未知" else SimpleDateFormat(
+            "yyyy-MM-dd HH:mm",
             Locale.getDefault()
         ).format(Date(time))
     }
 
-    private fun addButton(
-        root: LinearLayout,
-        title: String,
-        action: () -> Unit
-    ) {
+    private fun addButton(root: LinearLayout, title: String, action: () -> Unit) {
         val button = Button(this).apply {
             text = title
             setOnClickListener { action() }
@@ -287,7 +338,7 @@ class MainActivity : Activity() {
             LinearLayout.LayoutParams.MATCH_PARENT,
             LinearLayout.LayoutParams.WRAP_CONTENT
         )
-        params.bottomMargin = 10
+        params.bottomMargin = 8
         root.addView(button, params)
     }
 
@@ -307,7 +358,7 @@ class MainActivity : Activity() {
 }
 
 private class UsageDatabase(context: android.content.Context) :
-    SQLiteOpenHelper(context, "amoralink_usage.db", null, 1) {
+    SQLiteOpenHelper(context, "amoralink_usage.db", null, 2) {
 
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL(
@@ -322,67 +373,104 @@ private class UsageDatabase(context: android.content.Context) :
             )
             """.trimIndent()
         )
+        createMemoryTable(db)
     }
 
-    override fun onUpgrade(
-        db: SQLiteDatabase,
-        oldVersion: Int,
-        newVersion: Int
-    ) {
+    private fun createMemoryTable(db: SQLiteDatabase) {
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS memories (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                package_name TEXT NOT NULL,
+                title TEXT NOT NULL,
+                content TEXT NOT NULL,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL
+            )
+            """.trimIndent()
+        )
+    }
+
+    override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
+        if (oldVersion < 2) createMemoryTable(db)
     }
 
     fun saveSession(pkg: String, start: Long, end: Long) {
         if (end <= start) return
-
         val values = ContentValues().apply {
             put("package_name", pkg)
             put("started", start)
             put("ended", end)
             put("duration", end - start)
         }
-
         writableDatabase.insertWithOnConflict(
-            "sessions",
-            null,
-            values,
-            SQLiteDatabase.CONFLICT_REPLACE
+            "sessions", null, values, SQLiteDatabase.CONFLICT_REPLACE
         )
     }
 
-    fun getRecentSessions(
-        packages: Set<String>,
-        limit: Int
-    ): List<SessionRow> {
+    fun getRecentSessions(packages: Set<String>, limit: Int): List<SessionRow> {
         if (packages.isEmpty()) return emptyList()
-
-        val placeholders = packages.joinToString(",") { "?" }
-        val args = packages.toTypedArray()
-
+        val marks = packages.joinToString(",") { "?" }
         val cursor = readableDatabase.rawQuery(
             """
-            SELECT package_name, started, ended, duration
-            FROM sessions
-            WHERE package_name IN ($placeholders)
-            ORDER BY started DESC
-            LIMIT ?
+            SELECT package_name, started, ended, duration FROM sessions
+            WHERE package_name IN ($marks) ORDER BY started DESC LIMIT ?
             """.trimIndent(),
-            args + limit.toString()
+            packages.toTypedArray() + limit.toString()
         )
-
         val rows = mutableListOf<SessionRow>()
         cursor.use {
             while (it.moveToNext()) {
+                rows.add(SessionRow(it.getString(0), it.getLong(1), it.getLong(2), it.getLong(3)))
+            }
+        }
+        return rows
+    }
+
+    fun saveMemory(id: Long?, pkg: String, title: String, content: String) {
+        val now = System.currentTimeMillis()
+        val values = ContentValues().apply {
+            put("package_name", pkg)
+            put("title", title)
+            put("content", content)
+            put("updated_at", now)
+        }
+
+        if (id == null) {
+            values.put("created_at", now)
+            writableDatabase.insert("memories", null, values)
+        } else {
+            writableDatabase.update("memories", values, "id = ?", arrayOf(id.toString()))
+        }
+    }
+
+    fun getMemories(packages: Set<String>): List<MemoryRow> {
+        if (packages.isEmpty()) return emptyList()
+        val marks = packages.joinToString(",") { "?" }
+        val cursor = readableDatabase.rawQuery(
+            """
+            SELECT id, package_name, title, content, created_at, updated_at
+            FROM memories WHERE package_name IN ($marks)
+            ORDER BY updated_at DESC
+            """.trimIndent(),
+            packages.toTypedArray()
+        )
+        val rows = mutableListOf<MemoryRow>()
+        cursor.use {
+            while (it.moveToNext()) {
                 rows.add(
-                    SessionRow(
-                        packageName = it.getString(0),
-                        started = it.getLong(1),
-                        ended = it.getLong(2),
-                        duration = it.getLong(3)
+                    MemoryRow(
+                        it.getLong(0), it.getString(1), it.getString(2),
+                        it.getString(3), it.getLong(4), it.getLong(5)
                     )
                 )
             }
         }
         return rows
+    }
+
+    fun deleteMemory(id: Long) {
+        writableDatabase.delete("memories", "id = ?", arrayOf(id.toString()))
     }
 }
 
@@ -391,4 +479,13 @@ private data class SessionRow(
     val started: Long,
     val ended: Long,
     val duration: Long
+)
+
+private data class MemoryRow(
+    val id: Long,
+    val packageName: String,
+    val title: String,
+    val content: String,
+    val createdAt: Long,
+    val updatedAt: Long
 )
