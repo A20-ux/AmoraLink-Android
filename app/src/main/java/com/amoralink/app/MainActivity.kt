@@ -65,7 +65,14 @@ class MainActivity : Activity() {
             14f,
             Color.WHITE
         )
-        root.addView(resultText)
+
+addButton(root, "测试云端连接") {
+    resultText.text = "正在连接云端……"
+    CloudflareRelayClient.checkHealth { response ->
+        resultText.text = response
+    }
+}
+root.addView(resultText)
 
         setContentView(ScrollView(this).apply { addView(root) })
     }
