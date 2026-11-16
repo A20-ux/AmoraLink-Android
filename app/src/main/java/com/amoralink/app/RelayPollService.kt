@@ -45,7 +45,7 @@ class RelayPollService : Service() {
             return
         }
 
-        CloudflareRelayClient.poll(deviceId, secret) { ok, body ->
+        CloudflareRelayClient.poll(deviceId, secret) { ok, body, _ ->
             if (!ok) {
                 RelayStore.setLastPoll(this, false, body)
                 return@poll
