@@ -1,14 +1,18 @@
 package com.amoralink.app
 
+import android.Manifest
 import android.app.Activity
 import android.app.AlertDialog
 import android.app.usage.UsageStatsManager
 import android.app.usage.UsageEvents
 import android.content.ContentValues
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
 import android.graphics.Color
+import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import android.view.View
@@ -23,6 +27,10 @@ class MainActivity : Activity() {
     private val selectedKey = "selected_companion_apps"
     private lateinit var resultText: TextView
     private lateinit var database: UsageDatabase
+    private lateinit var pairingStatus: TextView
+    private lateinit var controlStatus: TextView
+    private lateinit var reminderToggle: CheckBox
+    private lateinit var intervalLabel: TextView
 
     private val bg = Color.rgb(20, 20, 35)
     private val accent = Color.rgb(220, 120, 170)
@@ -45,6 +53,20 @@ class MainActivity : Activity() {
         addButton(root, "‮启开‬使用情况访问权限") {
             startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
         }
+        addButton(root, "开启无障碍服务权限") {
+            startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+        }
+        addButton(root, "开启悬浮窗权限") {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                startActivity(
+                    Intent(
+                        Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                        Uri.parse("package:$packageName")
+                    )
+                )
+            }
+        }
+        addButton(root, "通知权限") { requestNotificationPermission() }
         addButton(root, "刷‮使新‬用记录") {
             scanUsageEvents()
             showUsageReport()
@@ -58,6 +80,36 @@ class MainActivity : Activity() {
         root.addView(label("专属记忆", 21f, Color.WHITE))
         addButton(root, "添加‮条一‬记忆") { showMemoryEditor(null) }
         addButton(root, "查看 / 编辑 / 删除记忆") { showMemoryList() }
+
+        root.addView(space(12))
+        root.addView(label("配对与安全", 21f, Color.WHITE))
+        pairingStatus = label("尚未配对。", 14f, accent)
+        root.addView(pairingStatus)
+        addButton(root, "生成配对密钥") { showPairingDialog() }
+        addButton(root, "撤销配对") { revokePairing() }
+
+        root.addView(space(12))
+        root.addView(label("AI 专注控制", 21f, Color.WHITE))
+        controlStatus = label("未处于锁定状态。", 14f, Color.WHITE)
+        root.addView(controlStatus)
+        addButton(root, "紧急解锁") {
+            AiControlManager.emergencyUnlock(this)
+            refreshControlStatus()
+            resultText.text = "已执行紧急解锁。"
+        }
+        addButton(root, "查看指令历史") { showCommandHistory() }
+
+        root.addView(space(12))
+        root.addView(label("主动提醒", 21f, Color.WHITE))
+        reminderToggle = CheckBox(this).apply {
+            text = "启用长时间未使用提醒"
+            setTextColor(Color.WHITE)
+            setOnCheckedChangeListener { _, checked -> onReminderToggled(checked) }
+        }
+        root.addView(reminderToggle)
+        intervalLabel = label("提醒间隔：30 分钟", 14f, accent)
+        root.addView(intervalLabel)
+        addButton(root, "调整提醒间隔") { showIntervalPicker() }
 
         root.addView(space(12))
         resultText = label(
@@ -75,6 +127,10 @@ addButton(root, "测试云端连接") {
 root.addView(resultText)
 
         setContentView(ScrollView(this).apply { addView(root) })
+
+        refreshPairingStatus()
+        refreshControlStatus()
+        refreshReminderUi()
     }
 
     private fun chooseApps() {
@@ -334,6 +390,169 @@ root.addView(resultText)
             "yyyy-MM-dd HH:mm",
             Locale.getDefault()
         ).format(Date(time))
+    }
+
+    private fun requestNotificationPermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1001)
+            } else {
+                resultText.text = "通知权限已开启。"
+            }
+        } else {
+            resultText.text = "当前系统版本无需单独申请通知权限。"
+        }
+    }
+
+    private fun showPairingDialog() {
+        if (AiPairingManager.isPaired(this)) {
+            resultText.text = "已处于配对状态；如需更换请先撤销配对。"
+            return
+        }
+
+        val token = AiPairingManager.createPairingToken(this)
+
+        val view = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(24, 12, 24, 0)
+        }
+        val msg = TextView(this).apply {
+            text = "配对密钥只显示这一次，请妥善保存。远端 AI 指令必须携带此密钥。"
+            setTextColor(Color.DKGRAY)
+        }
+        val tokenView = EditText(this).apply {
+            setText(token)
+            isEnabled = false
+            setSingleLine(false)
+        }
+        view.addView(msg)
+        view.addView(tokenView)
+
+        AlertDialog.Builder(this)
+            .setTitle("配对密钥")
+            .setView(view)
+            .setPositiveButton("复制密钥") { _, _ -> copyToClipboard(token) }
+            .setNegativeButton("关闭", null)
+            .show()
+
+        refreshPairingStatus()
+    }
+
+    private fun refreshPairingStatus() {
+        pairingStatus.text = if (AiPairingManager.isPaired(this)) {
+            "已配对：远端指令需携带本机配对密钥。"
+        } else {
+            "尚未配对。"
+        }
+    }
+
+    private fun revokePairing() {
+        if (!AiPairingManager.isPaired(this)) {
+            resultText.text = "当前没有配对。"
+            return
+        }
+        AlertDialog.Builder(this)
+            .setMessage("撤销配对后，所有远端指令都将被拒绝，并解除当前锁定。确定继续？")
+            .setPositiveButton("撤销") { _, _ ->
+                AiPairingManager.revokePairing(this)
+                refreshPairingStatus()
+                refreshControlStatus()
+                resultText.text = "配对已撤销。"
+            }
+            .setNegativeButton("取消", null)
+            .show()
+    }
+
+    private fun refreshControlStatus() {
+        if (AiControlManager.isLockRequested(this)) {
+            val pkg = AiControlManager.getLockedPackage(this)
+            val reason = AiControlManager.getLockReason(this)
+            val name = pkg?.let { appName(it) } ?: "未知应用"
+            controlStatus.text = "锁定中：$name" + if (reason.isBlank()) "" else "（$reason）"
+        } else {
+            controlStatus.text = "未处于锁定状态。"
+        }
+    }
+
+    private fun showCommandHistory() {
+        val history = AiControlManager.getCommandHistory(this)
+        if (history.isEmpty()) {
+            resultText.text = "暂无指令历史。"
+            return
+        }
+        AlertDialog.Builder(this)
+            .setTitle("指令历史（最近 100 条）")
+            .setItems(history.take(50).toTypedArray(), null)
+            .setNegativeButton("关闭", null)
+            .show()
+    }
+
+    private fun onReminderToggled(checked: Boolean) {
+        getSharedPreferences(prefsName, MODE_PRIVATE)
+            .edit()
+            .putBoolean("proactive_enabled", checked)
+            .apply()
+
+        if (checked) {
+            ReminderScheduler.schedule(this)
+            startReminderService()
+            resultText.text = "主动提醒已开启。"
+        } else {
+            ReminderScheduler.cancel(this)
+            stopReminderService()
+            resultText.text = "主动提醒已关闭。"
+        }
+    }
+
+    private fun refreshReminderUi() {
+        val prefs = getSharedPreferences(prefsName, MODE_PRIVATE)
+        val enabled = prefs.getBoolean("proactive_enabled", false)
+        val minutes = prefs.getInt("reminder_minutes", 30)
+
+        reminderToggle.setOnCheckedChangeListener(null)
+        reminderToggle.isChecked = enabled
+        reminderToggle.setOnCheckedChangeListener { _, c -> onReminderToggled(c) }
+        intervalLabel.text = "提醒间隔：$minutes 分钟"
+    }
+
+    private fun showIntervalPicker() {
+        val options = intArrayOf(15, 30, 60, 120)
+        val labels = options.map { "$it 分钟" }.toTypedArray()
+        val prefs = getSharedPreferences(prefsName, MODE_PRIVATE)
+        val current = prefs.getInt("reminder_minutes", 30)
+        val checked = options.indexOf(current).coerceAtLeast(0)
+
+        AlertDialog.Builder(this)
+            .setTitle("提醒间隔")
+            .setSingleChoiceItems(labels, checked) { dialog, which ->
+                val minutes = options[which]
+                prefs.edit().putInt("reminder_minutes", minutes).apply()
+                intervalLabel.text = "提醒间隔：$minutes 分钟"
+                if (prefs.getBoolean("proactive_enabled", false)) {
+                    ReminderScheduler.schedule(this)
+                }
+                dialog.dismiss()
+            }
+            .setNegativeButton("取消", null)
+            .show()
+    }
+
+    private fun startReminderService() {
+        try {
+            startService(Intent(this, ReminderOverlayService::class.java))
+        } catch (_: Exception) {
+            resultText.text = "悬浮提醒服务启动失败，请检查悬浮窗权限。"
+        }
+    }
+
+    private fun stopReminderService() {
+        stopService(Intent(this, ReminderOverlayService::class.java))
+    }
+
+    private fun copyToClipboard(text: String) {
+        val cm = getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager
+        cm.setPrimaryClip(android.content.ClipData.newPlainText("amora_link_token", text))
+        resultText.text = "密钥已复制到剪贴板。"
     }
 
     private fun addButton(root: LinearLayout, title: String, action: () -> Unit) {
