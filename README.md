@@ -12,11 +12,12 @@ Amora Link 是一个本地优先的 AI 伴侣陪伴辅助应用：记录你选�
 - **AI 专注控制**：校验配对密钥、时间戳（前后 2 分钟）、指令编号防重后接受 `AI_LOCK` / `AI_UNLOCK`；界面可查看锁定状态、原因、指令历史，并可随时紧急解锁。
 - **无障碍回返**：锁定期间检测到切到其他应用时，尝试回到已绑定的陪伴应用（不绕过系统后台启动限制）。
 - **主动提醒**：可开关、可调间隔（15 / 30 / 60 / 120 分钟）；长时间未使用时发通知，可选悬浮气泡引导返回；开机后自动恢复提醒闹钟。
-- **云端中继（轮询）**：配对成功后设备向 Worker 注册并换取设备凭证；手机端每 30 秒轮询待执行指令，交给本地校验通过后执行并回执。Worker 只做排队转发，业务合法性仍由手机端二次校验。
+- **云端中继（轮询）**：配对成功后设备向 Worker 注册并换取设备凭证；手机端轮询待执行指令，交给本地校验通过后执行并回执。Worker 只做排队转发，业务合法性仍由手机端二次校验。
+- **推送/轮询开关**：中继区可手动切换「优先实时推送 / 仅轮询」。仅轮询 30 秒一轮；推送优先模式在推送适配器接入前以 15 秒快速轮询兜底。
 - **云端健康检查**：测试 Cloudflare Worker 连通性。
 
 ### 尚未实现
-- **实时推送**：当前为 30 秒轮询的普通后台服务，进程被回收后需下次打开 App 拉起；FCM / 华为 Push Kit 等实时推送适配器未接入（`PushProvider` 接口与本地注册存储已就绪）。
+- **实时推送通道**：FCM / 华为 Push Kit 等推送适配器尚未接入（`PushProvider` 接口与本地注册存储已就绪）。当前推送优先模式只是加快轮询；真实推送到达后会立即触发一次拉取。进程被回收后需下次打开 App 或开机后重新拉起。
 - 具体协议见 [AI_CONTROL_PROTOCOL.md](AI_CONTROL_PROTOCOL.md)。
 
 ## 权限说明
@@ -32,17 +33,17 @@ Amora Link 是一个本地优先的 AI 伴侣陪伴辅助应用：记录你选�
 
 ## 部署云端中继（Cloudflare Worker + KV）
 
-1. 创建 KV 命名空间：
-   ```bash
-   cd cloudflare-worker
-   npx wrangler kv namespace create amora_commands
-   ```
-   把返回的 `id` 填进 `wrangler.toml` 的 `COMMAND_KV` 绑定。
+1. 创建 KV 命名空间（`amora_commands`）。本仓库为公开仓库，**KV namespace id 不写进 `wrangler.toml`**：
+   - 方式一（推荐）：Cloudflare 后台 → 本 Worker → Settings → Bindings → KV，把 `amora_commands` 绑定到 `COMMAND_KV`。
+   - 方式二：本地部署前在 `wrangler.toml` 取消 `id` 行注释并填入 id，切勿提交该改动。
 2. 部署 Worker：
    ```bash
+   cd cloudflare-worker
    npx wrangler deploy
    ```
 3. 手机端生成配对密钥后会自动向 `/v1/register` 注册；打开「测试云端连接」，健康检查返回 `remote_commands_enabled: true` 即 KV 已接通。
+
+> 真密钥（Cloudflare API Token、FCM 服务账号私钥、华为 App Secret、配对令牌、设备 secret）一律不进仓库：Worker 侧用 `wrangler secret put <NAME>` 注入，代码里只通过 `env.<NAME>` 引用；本机密钥/配置已在 `.gitignore` 中排除。
 
 ### 中继接口
 

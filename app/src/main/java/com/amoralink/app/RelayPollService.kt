@@ -8,22 +8,28 @@ import android.os.Looper
 import org.json.JSONObject
 
 /**
- * 云端中继轮询服务：每 30 秒拉取一次待执行指令，
+ * 云端中继轮询服务：按设置拉取待执行指令，
  * 交给 AiControlManager 做完整安全校验后执行，再回执移出队列。
  *
- * 注意：这是普通后台服务，进程被系统回收后需下次打开 App 或开机后重新拉起；
- * 高可靠的实时下发后续应接 FCM / 厂商推送。
+ * 兜底策略：仅轮询模式 30 秒一轮；优先实时推送模式在推送适配器接入前以 15 秒快速轮询兜底，
+ * 真实推送（FCM / 厂商推送）到达后会立即触发一次拉取。
+ * 注意：这是普通后台服务，进程被系统回收后需下次打开 App 或开机后重新拉起。
  */
 class RelayPollService : Service() {
 
     private val handler = Handler(Looper.getMainLooper())
     private var stopped = false
-    private val intervalMs = 30_000L
+
+    private fun intervalMs(): Long {
+        val mode = getSharedPreferences("AmoraLinkSettings", MODE_PRIVATE)
+            .getString("push_mode", "poll")
+        return if (mode == "push") 15_000L else 30_000L
+    }
 
     private val pollTask = object : Runnable {
         override fun run() {
             poll()
-            if (!stopped) handler.postDelayed(this, intervalMs)
+            if (!stopped) handler.postDelayed(this, intervalMs())
         }
     }
 

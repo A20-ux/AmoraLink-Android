@@ -32,6 +32,7 @@ class MainActivity : Activity() {
     private lateinit var reminderToggle: CheckBox
     private lateinit var intervalLabel: TextView
     private lateinit var relayStatus: TextView
+    private lateinit var pushToggle: CheckBox
 
     private val bg = Color.rgb(20, 20, 35)
     private val accent = Color.rgb(220, 120, 170)
@@ -109,6 +110,12 @@ class MainActivity : Activity() {
             refreshRelayStatus()
             resultText.text = "已触发轮询，稍候查看状态。"
         }
+        pushToggle = CheckBox(this).apply {
+            text = "优先实时推送（推送不可用时自动回退轮询）"
+            setTextColor(Color.WHITE)
+            setOnCheckedChangeListener { _, checked -> onPushModeToggled(checked) }
+        }
+        root.addView(pushToggle)
 
         root.addView(space(12))
         root.addView(label("主动提醒", 21f, Color.WHITE))
@@ -142,6 +149,7 @@ root.addView(resultText)
         refreshPairingStatus()
         refreshControlStatus()
         refreshReminderUi()
+        refreshPushToggle()
         startRelayService()
         refreshRelayStatus()
     }
@@ -574,6 +582,30 @@ root.addView(resultText)
 
     private fun stopRelayService() {
         stopService(Intent(this, RelayPollService::class.java))
+    }
+
+    private fun onPushModeToggled(checked: Boolean) {
+        getSharedPreferences(prefsName, MODE_PRIVATE)
+            .edit()
+            .putString("push_mode", if (checked) "push" else "poll")
+            .apply()
+
+        // 切换策略后重启中继服务，应用新的兜底间隔；真实推送适配器接入后在此注册/注销。
+        stopRelayService()
+        startRelayService()
+        resultText.text = if (checked) {
+            "已切换为优先实时推送；推送通道就绪前以较快轮询兜底。"
+        } else {
+            "已切换为仅轮询模式。"
+        }
+    }
+
+    private fun refreshPushToggle() {
+        val mode = getSharedPreferences(prefsName, MODE_PRIVATE)
+            .getString("push_mode", "poll")
+        pushToggle.setOnCheckedChangeListener(null)
+        pushToggle.isChecked = mode == "push"
+        pushToggle.setOnCheckedChangeListener { _, c -> onPushModeToggled(c) }
     }
 
     private fun refreshRelayStatus() {

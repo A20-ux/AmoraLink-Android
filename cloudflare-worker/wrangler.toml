@@ -3,8 +3,10 @@ main = "src/index.js"
 compatibility_date = "2026-11-15"
 workers_dev = true
 
-# 指令队列 KV：先执行 `wrangler kv namespace create amora_commands`，
-# 把返回的 id 填到下面，再 `wrangler deploy`。
+# 指令队列 KV。
+# KV namespace id 不属于密钥，但本仓库为公开仓库，id 不写在这里：
+# 方式一（推荐）：Cloudflare 后台 → 本 Worker → Settings → Bindings → KV 绑定 amora_commands。
+# 方式二：本地部署前取消下一行注释并填入 id，切勿提交该改动。
 [[kv_namespaces]]
 binding = "COMMAND_KV"
-id = "在此填入_KV_namespace_id"
+# id = "your-kv-namespace-id"

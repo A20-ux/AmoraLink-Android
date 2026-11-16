@@ -1,0 +1,17 @@
+# 密钥 / 本地配置（绝不提交）
+.env
+.env.*
+*.local
+*serviceAccount*.json
+*-secret*.json
+*.keystore
+*.jks
+
+# Worker 本地缓存与依赖
+.wrangler/
+node_modules/
+
+# 构建产物
+build/
+*.apk
+*.aab
