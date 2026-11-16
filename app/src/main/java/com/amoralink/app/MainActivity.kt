@@ -432,10 +432,14 @@ root.addView(resultText)
         }
 
         val token = AiPairingManager.createPairingToken(this)
+        val pushToken = PushRegistrationStore.getToken(this)
 
-        CloudflareRelayClient.register(token, Build.MODEL) { ok, deviceId, secret, err ->
+        CloudflareRelayClient.register(token, Build.MODEL, pushToken) { ok, deviceId, secret, err ->
             if (ok) {
                 RelayStore.save(this, deviceId, secret)
+                if (pushToken.isNotBlank()) {
+                    CloudflareRelayClient.reportPushToken(deviceId, secret, pushToken) { _ -> }
+                }
                 startRelayService()
                 refreshRelayStatus()
             } else {
@@ -488,6 +492,7 @@ root.addView(resultText)
                 AiPairingManager.revokePairing(this)
                 stopRelayService()
                 RelayStore.clear(this)
+                PushRegistrationStore.clear(this)
                 refreshPairingStatus()
                 refreshControlStatus()
                 refreshRelayStatus()

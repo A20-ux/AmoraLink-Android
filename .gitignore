@@ -4,6 +4,7 @@
 *.local
 *serviceAccount*.json
 *-secret*.json
+agconnect-services.json
 *.keystore
 *.jks
 

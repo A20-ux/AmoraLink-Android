@@ -40,6 +40,8 @@ class RelayPollService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // 被推送消息或界面拉起时立即拉取一次；定时兜底由 pollTask 继续周期执行。
+        poll()
         return START_STICKY
     }
 

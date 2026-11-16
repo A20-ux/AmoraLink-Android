@@ -24,3 +24,8 @@ android {
         jvmTarget = "17"
     }
 }
+
+dependencies {
+    // 华为 Push Kit（HMS Core）实时推送
+    implementation("com.huawei.hms:push:6.12.0.300")
+}
