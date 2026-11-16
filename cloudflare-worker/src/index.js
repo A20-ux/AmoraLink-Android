@@ -9,7 +9,7 @@
  * KV 绑定：COMMAND_KV（在 wrangler.toml 配置 namespace id）。
  * 键位：
  *  bytoken:<sha256(pairingToken)> -> deviceId
- *  dev:<deviceId>                 -> { secretHash, tokenHash, deviceName, pushToken, createdAt, lastSeen }
+ *  dev:<deviceId>                 -> { secretHash, tokenHash, deviceName, createdAt, lastSeen }
  *  q:<deviceId>                   -> [ { command_id, payload, createdAt } ]
  */
 
@@ -51,69 +51,6 @@ async function readBody(request) {
 
 const ALLOWED_ACTIONS = ["AI_LOCK", "AI_UNLOCK"];
 
-// 华为 OAuth access_token 缓存在 Worker isolate 内，有效期内复用，过期再换。
-let hmsTokenCache = { token: "", expiresAt: 0 };
-
-async function hmsGetAccessToken(env) {
-  const now = Date.now();
-  if (hmsTokenCache.token && hmsTokenCache.expiresAt - 60_000 > now) {
-    return hmsTokenCache.token;
-  }
-  const clientId = env.HMS_CLIENT_ID || env.HMS_APP_ID;
-  if (!clientId || !env.HMS_APP_SECRET) return null;
-
-  const resp = await fetch("https://connect-api.cloud.huawei.com/api/oauth2/v1/token", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      grant_type: "client_credentials",
-      client_id: clientId,
-      client_secret: env.HMS_APP_SECRET
-    })
-  });
-  if (!resp.ok) return null;
-
-  const data = await resp.json();
-  const accessToken = data.access_token;
-  if (!accessToken) return null;
-
-  const expiresIn = Number(data.expires_in) || 48 * 3600;
-  hmsTokenCache = { token: accessToken, expiresAt: now + expiresIn * 1000 };
-  return accessToken;
-}
-
-// 入队后 best-effort 推送一条唤醒消息；失败不影响指令入队，轮询兜底。
-async function hmsPush(env, pushToken, action) {
-  if (!pushToken) return;
-  const clientId = env.HMS_CLIENT_ID || env.HMS_APP_ID;
-  if (!clientId || !env.HMS_APP_SECRET) return;
-
-  try {
-    const accessToken = await hmsGetAccessToken(env);
-    if (!accessToken) return;
-
-    const body = action === "AI_UNLOCK" ? "已收到解锁指令" : "已收到锁定指令";
-    await fetch(`https://push-api.cloud.huawei.com/v1/${clientId}/messages:send`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${accessToken}`
-      },
-      body: JSON.stringify({
-        message: {
-          token: [pushToken],
-          data: JSON.stringify({ type: "amora_command", action }),
-          android: {
-            notification: { title: "Amora Link", body }
-          }
-        }
-      })
-    });
-  } catch (_) {
-    // 推送通道异常时静默降级，等待下一次轮询。
-  }
-}
-
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -126,9 +63,8 @@ export default {
       return json({
         service: "Amora Link Relay",
         status: "online",
-        version: "0.3.0",
-        remote_commands_enabled: !!env.COMMAND_KV,
-        push_enabled: !!(env.HMS_APP_ID && env.HMS_APP_SECRET)
+        version: "0.2.1",
+        remote_commands_enabled: !!env.COMMAND_KV
       });
     }
 
@@ -142,7 +78,6 @@ export default {
       const body = await readBody(request);
       const token = String(body?.token || "").trim();
       const deviceName = String(body?.device_name || "").slice(0, 60);
-      const pushToken = String(body?.push_token || "").slice(0, 2048);
 
       if (token.length < 32 || token.length > 128) {
         return json({ success: false, message: "invalid pairing token" }, 400);
@@ -159,7 +94,6 @@ export default {
       }
 
       const existing = deviceId ? await kv.get(`dev:${deviceId}`, "json") : null;
-      const savedPushToken = pushToken || existing?.pushToken || "";
 
       await kv.put(`bytoken:${tokenHash}`, deviceId);
       await kv.put(
@@ -168,7 +102,6 @@ export default {
           secretHash,
           tokenHash,
           deviceName,
-          pushToken: savedPushToken,
           createdAt: existing?.createdAt || now,
           lastSeen: now
         })
@@ -203,32 +136,7 @@ export default {
       while (queue.length > 50) queue.shift();
       await kv.put(`q:${deviceId}`, JSON.stringify(queue));
 
-      // 入队后 best-effort 经华为推送唤醒设备；失败不影响队列，轮询兜底。
-      const dev = await kv.get(`dev:${deviceId}`, "json");
-      if (dev?.pushToken) {
-        await hmsPush(env, dev.pushToken, action);
-      }
-
       return json({ success: true, command_id: commandId });
-    }
-
-    // 设备上报/更新推送 token，绑定到当前设备。
-    if (url.pathname === "/v1/push-token" && request.method === "POST") {
-      const body = await readBody(request);
-      const deviceId = String(body?.device_id || "").trim();
-      const secret = String(body?.secret || "");
-      const pushToken = String(body?.push_token || "").slice(0, 2048);
-
-      const dev = deviceId ? await kv.get(`dev:${deviceId}`, "json") : null;
-      if (!dev || (await sha256Hex(secret)) !== dev.secretHash) {
-        return json({ success: false, message: "auth failed" }, 401);
-      }
-
-      dev.pushToken = pushToken;
-      dev.lastSeen = Date.now();
-      await kv.put(`dev:${deviceId}`, JSON.stringify(dev));
-
-      return json({ success: true });
     }
 
     // 设备轮询：凭 device_id + secret 拉取待执行指令。

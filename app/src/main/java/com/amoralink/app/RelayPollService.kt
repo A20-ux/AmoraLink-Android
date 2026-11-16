@@ -1,19 +1,24 @@
 package com.amoralink.app
 
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
 import android.app.Service
 import android.content.Intent
+import android.content.pm.ServiceInfo
+import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import org.json.JSONObject
 
 /**
- * 云端中继轮询服务：按设置拉取待执行指令，
- * 交给 AiControlManager 做完整安全校验后执行，再回执移出队列。
+ * 云端中继轮询服务（前台服务 + 闹钟唤醒兜底）。
  *
- * 兜底策略：仅轮询模式 30 秒一轮；优先实时推送模式在推送适配器接入前以 15 秒快速轮询兜底，
- * 真实推送（FCM / 厂商推送）到达后会立即触发一次拉取。
- * 注意：这是普通后台服务，进程被系统回收后需下次打开 App 或开机后重新拉起。
+ * - 作为前台服务常驻，降低被系统后台回收的概率；通知为最低优先级、静默、不显示角标。
+ * - 存活期间按设置周期轮询：仅轮询 30 秒，推送优先模式 15 秒。
+ * - 进程若被回收，[RelayWakeReceiver] 会经 AlarmManager 按兜底间隔重新拉起本服务。
+ * - 拉到的指令交给 AiControlManager 做完整安全校验后执行，再回执移出队列。
  */
 class RelayPollService : Service() {
 
@@ -35,14 +40,65 @@ class RelayPollService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        ensureChannel()
+        startAsForeground()
         stopped = false
         handler.post(pollTask)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        // 被推送消息或界面拉起时立即拉取一次；定时兜底由 pollTask 继续周期执行。
+        // 被闹钟或界面拉起时立即拉取一次；同时排好下一次兜底唤醒。
         poll()
+        RelayWakeScheduler.schedule(this)
         return START_STICKY
+    }
+
+    private fun startAsForeground() {
+        val notification = buildNotification()
+        try {
+            if (Build.VERSION.SDK_INT >= 34) {
+                startForeground(
+                    NOTIF_ID,
+                    notification,
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+                )
+            } else {
+                startForeground(NOTIF_ID, notification)
+            }
+        } catch (_: Exception) {
+            // 通知权限受限等情况不阻塞服务启动，轮询逻辑继续。
+        }
+    }
+
+    private fun ensureChannel() {
+        if (Build.VERSION.SDK_INT < 26) return
+        val manager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
+        val channel = NotificationChannel(
+            CHANNEL_ID,
+            "中继后台同步",
+            NotificationManager.IMPORTANCE_MIN
+        ).apply {
+            description = "保持云端指令中继在后台同步，无声音、不弹出提醒。"
+            setShowBadge(false)
+            setSound(null, null)
+        }
+        manager.createNotificationChannel(channel)
+    }
+
+    private fun buildNotification(): Notification {
+        val builder = if (Build.VERSION.SDK_INT >= 26) {
+            Notification.Builder(this, CHANNEL_ID)
+        } else {
+            @Suppress("DEPRECATION")
+            Notification.Builder(this)
+        }
+        return builder
+            .setSmallIcon(android.R.drawable.ic_menu_recent_history)
+            .setContentTitle("Amora Link")
+            .setContentText("后台同步远程指令")
+            .setOngoing(true)
+            .setPriority(Notification.PRIORITY_MIN)
+            .build()
     }
 
     private fun poll() {
@@ -83,8 +139,14 @@ class RelayPollService : Service() {
     override fun onDestroy() {
         stopped = true
         handler.removeCallbacks(pollTask)
+        stopForeground(STOP_FOREGROUND_REMOVE)
         super.onDestroy()
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
+
+    companion object {
+        private const val NOTIF_ID = 8401
+        private const val CHANNEL_ID = "amoralink_relay"
+    }
 }

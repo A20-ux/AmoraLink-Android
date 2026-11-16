@@ -111,7 +111,7 @@ class MainActivity : Activity() {
             resultText.text = "已触发轮询，稍候查看状态。"
         }
         pushToggle = CheckBox(this).apply {
-            text = "优先实时推送（推送不可用时自动回退轮询）"
+            text = "快速轮询模式（响应更快，耗电略高）"
             setTextColor(Color.WHITE)
             setOnCheckedChangeListener { _, checked -> onPushModeToggled(checked) }
         }
@@ -432,14 +432,10 @@ root.addView(resultText)
         }
 
         val token = AiPairingManager.createPairingToken(this)
-        val pushToken = PushRegistrationStore.getToken(this)
 
-        CloudflareRelayClient.register(token, Build.MODEL, pushToken) { ok, deviceId, secret, err ->
+        CloudflareRelayClient.register(token, Build.MODEL) { ok, deviceId, secret, err ->
             if (ok) {
                 RelayStore.save(this, deviceId, secret)
-                if (pushToken.isNotBlank()) {
-                    CloudflareRelayClient.reportPushToken(deviceId, secret, pushToken) { _ -> }
-                }
                 startRelayService()
                 refreshRelayStatus()
             } else {
@@ -578,14 +574,20 @@ root.addView(resultText)
 
     private fun startRelayService() {
         if (!RelayStore.isRegistered(this)) return
+        RelayWakeScheduler.schedule(this)
         try {
-            startService(Intent(this, RelayPollService::class.java))
+            startForegroundService(Intent(this, RelayPollService::class.java))
         } catch (_: Exception) {
-            resultText.text = "中继服务启动失败。"
+            try {
+                startService(Intent(this, RelayPollService::class.java))
+            } catch (_: Exception) {
+                resultText.text = "中继服务启动失败。"
+            }
         }
     }
 
     private fun stopRelayService() {
+        RelayWakeScheduler.cancel(this)
         stopService(Intent(this, RelayPollService::class.java))
     }
 
@@ -595,13 +597,13 @@ root.addView(resultText)
             .putString("push_mode", if (checked) "push" else "poll")
             .apply()
 
-        // 切换策略后重启中继服务，应用新的兜底间隔；真实推送适配器接入后在此注册/注销。
+        // 切换策略后重启中继服务，应用新的轮询间隔。
         stopRelayService()
         startRelayService()
         resultText.text = if (checked) {
-            "已切换为优先实时推送；推送通道就绪前以较快轮询兜底。"
+            "已切换为快速轮询（15 秒一轮）。"
         } else {
-            "已切换为仅轮询模式。"
+            "已切换为省电轮询（30 秒一轮）。"
         }
     }
 

@@ -13,7 +13,6 @@ object RelayStore {
     private const val KEY_LAST_POLL = "last_poll_at"
     private const val KEY_LAST_OK = "last_poll_ok"
     private const val KEY_LAST_MSG = "last_poll_msg"
-    private const val KEY_PUSH_TOKEN = "push_token"
 
     fun save(context: Context, deviceId: String, secret: String) {
         if (deviceId.isBlank() || secret.isBlank()) return
@@ -29,13 +28,6 @@ object RelayStore {
 
     fun getSecret(context: Context): String =
         prefs(context).getString(KEY_SECRET, "") ?: ""
-
-    fun savePushToken(context: Context, token: String) {
-        prefs(context).edit().putString(KEY_PUSH_TOKEN, token).apply()
-    }
-
-    fun getPushToken(context: Context): String =
-        prefs(context).getString(KEY_PUSH_TOKEN, "") ?: ""
 
     fun isRegistered(context: Context): Boolean =
         getDeviceId(context).isNotBlank() && getSecret(context).isNotBlank()

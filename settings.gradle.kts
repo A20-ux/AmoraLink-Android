@@ -3,8 +3,6 @@ pluginManagement {
         google()
         mavenCentral()
         gradlePluginPortal()
-        // HMS Core SDK 仓库（放在最后）
-        maven { url = uri("https://developer.huawei.com/repo/") }
     }
 }
 
@@ -13,8 +11,6 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
-        // HMS Core SDK 仓库（放在最后）
-        maven { url = uri("https://developer.huawei.com/repo/") }
     }
 }
 

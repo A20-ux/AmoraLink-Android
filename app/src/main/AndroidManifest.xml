@@ -5,14 +5,14 @@
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
 
     <queries>
         <intent>
             <action android:name="android.intent.action.MAIN" />
             <category android:name="android.intent.category.LAUNCHER" />
         </intent>
-        <!-- Android 11+ 查询并交互 HMS Core（华为移动服务） -->
-        <package android:name="com.huawei.hwid" />
     </queries>
 
     <application
@@ -20,11 +20,6 @@
         android:label="Amora Link"
         android:theme="@android:style/Theme.Material.NoActionBar"
         android:usesCleartextTraffic="true">
-
-        <!-- 推送 SDK 启动时自动获取 token -->
-        <meta-data
-            android:name="push_kit_auto_init_enabled"
-            android:value="true" />
 
         <activity
             android:name=".MainActivity"
@@ -37,6 +32,11 @@
 
         <receiver
             android:name=".ProactiveReminderReceiver"
+            android:enabled="true"
+            android:exported="false" />
+
+        <receiver
+            android:name=".RelayWakeReceiver"
             android:enabled="true"
             android:exported="false" />
 
@@ -55,16 +55,8 @@
 
         <service
             android:name=".RelayPollService"
-            android:exported="false" />
-
-        <!-- 华为 Push Kit：接收 token 刷新与下行消息 -->
-        <service
-            android:name=".HmsPushService"
-            android:exported="false">
-            <intent-filter>
-                <action android:name="com.huawei.push.action.MESSAGING_EVENT" />
-            </intent-filter>
-        </service>
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
 
     
         <service

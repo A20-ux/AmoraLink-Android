@@ -46,13 +46,11 @@ object CloudflareRelayClient {
     fun register(
         token: String,
         deviceName: String,
-        pushToken: String = "",
         callback: (Boolean, String, String, String?) -> Unit
     ) {
         val body = JSONObject()
             .put("token", token)
             .put("device_name", deviceName)
-            .put("push_token", pushToken)
             .toString()
 
         post("/v1/register", body) { ok, text ->
@@ -104,22 +102,6 @@ object CloudflareRelayClient {
             .toString()
 
         post("/v1/ack", body) { ok, _ -> callback(ok) }
-    }
-
-    /** 上报/更新华为推送 token，绑定到当前设备。 */
-    fun reportPushToken(
-        deviceId: String,
-        secret: String,
-        pushToken: String,
-        callback: (Boolean) -> Unit
-    ) {
-        val body = JSONObject()
-            .put("device_id", deviceId)
-            .put("secret", secret)
-            .put("push_token", pushToken)
-            .toString()
-
-        post("/v1/push-token", body) { ok, _ -> callback(ok) }
     }
 
     private fun post(

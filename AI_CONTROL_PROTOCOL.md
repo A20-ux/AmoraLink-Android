@@ -31,7 +31,7 @@
 - 同一 command_id 不‮重能‬复使用。
 - AI_LOCK 只能指定 Amora Link ‮选已‬择的陪‮应伴‬用。
 - ‮户用‬仍可使用 Amora Link 的‮急紧‬解锁功能。
-- 云端指令经 Cloudflare Worker 队列传输；入队后 Worker 经华为 Push Kit 推送唤醒设备，手机收到后立即拉取；轮询作为推送不可用时的兜底。Worker 只负责排队转发，手机端仍按下列规则二次校验。
+- 云端指令经 Cloudflare Worker 队列传输；手机端以前台服务周期轮询拉取，AlarmManager 在进程回收后兜底唤醒。Worker 只负责排队转发，手机端仍按下列规则二次校验。
 
 ## Remote message adapter
 
@@ -45,23 +45,22 @@ A future push provider adapter should:
 5. Report only the command result, without exposing secrets.
 
 This router does not create a network connection or receive push messages
-by itself. The Huawei Push Kit adapter (`HmsPushService`) receives the downlink
-message and wakes the relay poll; FCM and other provider adapters are not used.
+by itself. No push provider adapter is wired at present; the relay poll
+service fetches commands on a timer and the alarm restarts it if the process
+is reclaimed.
 
 ## Push provider interface
 
 PushProvider defines a common interface for future push services.
 
 PushRegistrationStore stores the selected provider name, device token,
-registration status, and token update time.
+registration status, and token update time. Both are kept as placeholders.
 
 Current status:
-- Provider interface: implemented.
-- Local registration storage: implemented.
+- Provider interface: placeholder only.
+- Local registration storage: placeholder only.
 - Cloud relay: implemented (Worker KV command queue; device polls `/v1/poll` and acks after handling).
-- Huawei Push Kit adapter: implemented on the client; token is reported to `/v1/push-token`, and the Worker sends a wake-up message through the Huawei push API after enqueueing a command.
-- Firebase adapter: excluded (device has no Google Play services).
-- Real-time delivery depends on AGC app configuration and Worker secrets being provisioned; polling remains the fallback.
+- Push adapters (Huawei Push Kit / FCM): not wired; the device currently relies on polling with a foreground service and alarm wake-up.
 
-Device push tokens must be sent only to a trusted backend over HTTPS.
+Any future device push token must be sent only to a trusted backend over HTTPS.
 Never place AI pairing secrets in public source code.
