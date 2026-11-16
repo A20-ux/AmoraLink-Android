@@ -2,3 +2,9 @@ name = "dry-unit-113e"
 main = "src/index.js"
 compatibility_date = "2026-11-15"
 workers_dev = true
+
+# 指令队列 KV：先执行 `wrangler kv namespace create amora_commands`，
+# 把返回的 id 填到下面，再 `wrangler deploy`。
+[[kv_namespaces]]
+binding = "COMMAND_KV"
+id = "在此填入_KV_namespace_id"

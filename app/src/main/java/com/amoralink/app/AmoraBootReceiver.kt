@@ -18,5 +18,13 @@ class AmoraBootReceiver : BroadcastReceiver() {
         if (prefs.getBoolean("proactive_enabled", false)) {
             ReminderScheduler.schedule(context)
         }
+
+        if (RelayStore.isRegistered(context)) {
+            try {
+                context.startService(Intent(context, RelayPollService::class.java))
+            } catch (_: Exception) {
+                // 后台启动受限，下次打开 App 时再拉起中继服务。
+            }
+        }
     }
 }

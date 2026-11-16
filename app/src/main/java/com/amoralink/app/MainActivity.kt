@@ -31,6 +31,7 @@ class MainActivity : Activity() {
     private lateinit var controlStatus: TextView
     private lateinit var reminderToggle: CheckBox
     private lateinit var intervalLabel: TextView
+    private lateinit var relayStatus: TextView
 
     private val bg = Color.rgb(20, 20, 35)
     private val accent = Color.rgb(220, 120, 170)
@@ -100,6 +101,16 @@ class MainActivity : Activity() {
         addButton(root, "查看指令历史") { showCommandHistory() }
 
         root.addView(space(12))
+        root.addView(label("云端中继", 21f, Color.WHITE))
+        relayStatus = label("未连接云端。", 14f, accent)
+        root.addView(relayStatus)
+        addButton(root, "立即拉取指令") {
+            startRelayService()
+            refreshRelayStatus()
+            resultText.text = "已触发轮询，稍候查看状态。"
+        }
+
+        root.addView(space(12))
         root.addView(label("主动提醒", 21f, Color.WHITE))
         reminderToggle = CheckBox(this).apply {
             text = "启用长时间未使用提醒"
@@ -131,6 +142,8 @@ root.addView(resultText)
         refreshPairingStatus()
         refreshControlStatus()
         refreshReminderUi()
+        startRelayService()
+        refreshRelayStatus()
     }
 
     private fun chooseApps() {
@@ -412,6 +425,16 @@ root.addView(resultText)
 
         val token = AiPairingManager.createPairingToken(this)
 
+        CloudflareRelayClient.register(token, Build.MODEL) { ok, deviceId, secret, err ->
+            if (ok) {
+                RelayStore.save(this, deviceId, secret)
+                startRelayService()
+                refreshRelayStatus()
+            } else {
+                resultText.text = "云端注册失败：${err ?: "未知错误"}（本地配对仍已保存）"
+            }
+        }
+
         val view = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(24, 12, 24, 0)
@@ -455,9 +478,12 @@ root.addView(resultText)
             .setMessage("撤销配对后，所有远端指令都将被拒绝，并解除当前锁定。确定继续？")
             .setPositiveButton("撤销") { _, _ ->
                 AiPairingManager.revokePairing(this)
+                stopRelayService()
+                RelayStore.clear(this)
                 refreshPairingStatus()
                 refreshControlStatus()
-                resultText.text = "配对已撤销。"
+                refreshRelayStatus()
+                resultText.text = "配对已撤销，云端中继已断开。"
             }
             .setNegativeButton("取消", null)
             .show()
@@ -535,6 +561,30 @@ root.addView(resultText)
             }
             .setNegativeButton("取消", null)
             .show()
+    }
+
+    private fun startRelayService() {
+        if (!RelayStore.isRegistered(this)) return
+        try {
+            startService(Intent(this, RelayPollService::class.java))
+        } catch (_: Exception) {
+            resultText.text = "中继服务启动失败。"
+        }
+    }
+
+    private fun stopRelayService() {
+        stopService(Intent(this, RelayPollService::class.java))
+    }
+
+    private fun refreshRelayStatus() {
+        if (RelayStore.isRegistered(this)) {
+            val last = RelayStore.getLastPollAt(this)
+            val state = if (RelayStore.isLastOk(this)) "已连接" else "待同步"
+            relayStatus.text = "已注册 · $state" +
+                if (last > 0) "\n上次同步：${formatTime(last)}" else ""
+        } else {
+            relayStatus.text = "未连接云端。生成配对密钥后自动注册。"
+        }
     }
 
     private fun startReminderService() {

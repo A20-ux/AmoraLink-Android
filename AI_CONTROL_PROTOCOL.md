@@ -31,7 +31,7 @@
 - 同一 command_id 不‮重能‬复使用。
 - AI_LOCK 只能指定 Amora Link ‮选已‬择的陪‮应伴‬用。
 - ‮户用‬仍可使用 Amora Link 的‮急紧‬解锁功能。
-- 当前‮本版‬尚未实现云‮指端‬令传输。
+- 云端指令经 Cloudflare Worker 队列 + 手机轮询传输；Worker 只负责排队转发，手机端仍按下列规则二次校验。
 
 ## Remote message adapter
 
@@ -57,10 +57,10 @@ registration status, and token update time.
 Current status:
 - Provider interface: implemented.
 - Local registration storage: implemented.
+- Cloud relay: implemented (Worker KV command queue; device polls `/v1/poll` every 30s and acks after handling).
 - Huawei Push Kit adapter: not yet implemented.
 - Firebase adapter: not yet implemented.
-- Cloud relay: not yet implemented.
-- Actual remote message delivery: not yet available.
+- Real-time push delivery: not yet available; current delivery is polling-based.
 
 Device push tokens must be sent only to a trusted backend over HTTPS.
 Never place AI pairing secrets in public source code.

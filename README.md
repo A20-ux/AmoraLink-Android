@@ -12,11 +12,11 @@ Amora Link 是一个本地优先的 AI 伴侣陪伴辅助应用：记录你选�
 - **AI 专注控制**：校验配对密钥、时间戳（前后 2 分钟）、指令编号防重后接受 `AI_LOCK` / `AI_UNLOCK`；界面可查看锁定状态、原因、指令历史，并可随时紧急解锁。
 - **无障碍回返**：锁定期间检测到切到其他应用时，尝试回到已绑定的陪伴应用（不绕过系统后台启动限制）。
 - **主动提醒**：可开关、可调间隔（15 / 30 / 60 / 120 分钟）；长时间未使用时发通知，可选悬浮气泡引导返回；开机后自动恢复提醒闹钟。
+- **云端中继（轮询）**：配对成功后设备向 Worker 注册并换取设备凭证；手机端每 30 秒轮询待执行指令，交给本地校验通过后执行并回执。Worker 只做排队转发，业务合法性仍由手机端二次校验。
 - **云端健康检查**：测试 Cloudflare Worker 连通性。
 
 ### 尚未实现
-- **云端指令下发**：Worker 的 `/v1/commands` 仍为 503 占位；手机端尚未轮询或接入推送。
-- **推送适配器**：`PushProvider` 接口与本地注册存储已就绪，Huawei Push Kit / FCM 等适配器未接入。
+- **实时推送**：当前为 30 秒轮询的普通后台服务，进程被回收后需下次打开 App 拉起；FCM / 华为 Push Kit 等实时推送适配器未接入（`PushProvider` 接口与本地注册存储已就绪）。
 - 具体协议见 [AI_CONTROL_PROTOCOL.md](AI_CONTROL_PROTOCOL.md)。
 
 ## 权限说明
@@ -28,7 +28,45 @@ Amora Link 是一个本地优先的 AI 伴侣陪伴辅助应用：记录你选�
 | 悬浮窗（SYSTEM_ALERT_WINDOW） | 显示长时间未使用的提醒气泡 |
 | 通知（POST_NOTIFICATIONS） | 发送主动提醒通知 |
 | 开机自启（RECEIVE_BOOT_COMPLETED） | 重启后恢复提醒闹钟 |
-| 网络（INTERNET） | 云端健康检查与（未来）指令下发 |
+| 网络（INTERNET） | 云端健康检查、指令轮询与回执 |
+
+## 部署云端中继（Cloudflare Worker + KV）
+
+1. 创建 KV 命名空间：
+   ```bash
+   cd cloudflare-worker
+   npx wrangler kv namespace create amora_commands
+   ```
+   把返回的 `id` 填进 `wrangler.toml` 的 `COMMAND_KV` 绑定。
+2. 部署 Worker：
+   ```bash
+   npx wrangler deploy
+   ```
+3. 手机端生成配对密钥后会自动向 `/v1/register` 注册；打开「测试云端连接」，健康检查返回 `remote_commands_enabled: true` 即 KV 已接通。
+
+### 中继接口
+
+| 接口 | 鉴权 | 说明 |
+| --- | --- | --- |
+| `POST /v1/register` | 配对令牌 | 设备注册，换发 `device_id` + `secret` |
+| `POST /v1/commands` | 配对令牌 | 外部 AI / 操作者提交指令并入队 |
+| `POST /v1/poll` | 设备凭证 | 设备拉取待执行指令 |
+| `POST /v1/ack` | 设备凭证 | 执行后按 `command_id` 回执出队 |
+
+提交一条锁定指令示例：
+
+```bash
+curl -X POST https://<your-worker>.workers.dev/v1/commands \
+  -H "Content-Type: application/json" \
+  -d '{
+    "action": "AI_LOCK",
+    "auth_token": "<配对密钥>",
+    "command_id": "<8-128 位唯一编号>",
+    "timestamp_ms": 1790000000000,
+    "package_name": "<已选陪伴应用包名>",
+    "reason": "专注写稿"
+  }'
+```
 
 ## 构建
 
