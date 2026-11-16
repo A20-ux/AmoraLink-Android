@@ -15,6 +15,7 @@ Amora Link 是一个本地优先的 AI 伴侣陪伴辅助应用：记录你选�
 - **云端中继（轮询）**：配对成功后设备向 Worker 注册并换取设备凭证；手机端轮询待执行指令，交给本地校验通过后执行并回执。Worker 只做排队转发，业务合法性仍由手机端二次校验。
 - **保活机制**：中继以后台前台服务常驻（一条最低优先级静默通知），并由 AlarmManager 每 60 秒兜底唤醒；进程被回收或重启开机后会自动重新拉起。
 - **轮询节奏开关**：中继区可手动切换「快速轮询 / 省电轮询」。省电模式 30 秒一轮；快速模式 15 秒一轮，响应更快但耗电略高。
+- **MCP 接口**：Worker 暴露标准 Model Context Protocol（Streamable HTTP）端点，支持 MCP 的客户端可直接调用锁定 / 解锁 / 状态查询工具，复用同一套配对鉴权。
 - **云端健康检查**：测试 Cloudflare Worker 连通性。
 
 > 当前未接入系统级推送（FCM / 厂商推送），指令下发依赖轮询；`PushProvider` 接口与本地注册存储保留为占位，后续如需接入可直接复用。具体协议见 [AI_CONTROL_PROTOCOL.md](AI_CONTROL_PROTOCOL.md)。
@@ -51,11 +52,12 @@ Amora Link 是一个本地优先的 AI 伴侣陪伴辅助应用：记录你选�
 | 接口 | 鉴权 | 说明 |
 | --- | --- | --- |
 | `POST /v1/register` | 配对令牌 | 设备注册，换发 `device_id` + `secret` |
-| `POST /v1/commands` | 配对令牌 | 外部 AI / 操作者提交指令并入队 |
+| `POST /v1/commands` | 配对令牌 | 外部 AI / 操作者提交指令并入队（编号、时间戳由 Worker 自动补齐） |
 | `POST /v1/poll` | 设备凭证 | 设备拉取待执行指令 |
 | `POST /v1/ack` | 设备凭证 | 执行后按 `command_id` 回执出队 |
+| `POST /mcp` | Bearer 配对令牌 | MCP Streamable HTTP 端点（JSON-RPC 2.0） |
 
-提交一条锁定指令示例：
+提交一条锁定指令示例（`command_id`、`timestamp_ms` 可省略，由 Worker 生成）：
 
 ```bash
 curl -X POST https://<your-worker>.workers.dev/v1/commands \
@@ -63,10 +65,37 @@ curl -X POST https://<your-worker>.workers.dev/v1/commands \
   -d '{
     "action": "AI_LOCK",
     "auth_token": "<配对密钥>",
-    "command_id": "<8-128 位唯一编号>",
-    "timestamp_ms": 1790000000000,
     "package_name": "<已选陪伴应用包名>",
     "reason": "专注写稿"
+  }'
+```
+
+### MCP 接入
+
+- 端点：`https://<your-worker>.workers.dev/mcp`，传输为 Streamable HTTP，协议版本 `2024-11-05`。
+- 鉴权：请求头 `Authorization: Bearer <配对密钥>`（与 `/v1/commands` 同一把配对令牌）。
+- 支持的 JSON-RPC 方法：`initialize`、`tools/list`、`tools/call`。
+
+| 工具 | 入参 | 说明 |
+| --- | --- | --- |
+| `lock_companion_app` | `package_name`（必填）、`reason`（可选） | 下发 `AI_LOCK`，锁定指定陪伴应用 |
+| `unlock_device` | 无 | 下发 `AI_UNLOCK`，解除当前锁定 |
+| `device_status` | 无 | 查询设备在线状态、最后心跳与待处理指令数 |
+
+`tools/call` 示例：
+
+```bash
+curl -X POST https://<your-worker>.workers.dev/mcp \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <配对密钥>" \
+  -d '{
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "tools/call",
+    "params": {
+      "name": "lock_companion_app",
+      "arguments": { "package_name": "<已选陪伴应用包名>", "reason": "专注写稿" }
+    }
   }'
 ```
 
@@ -79,6 +108,6 @@ curl -X POST https://<your-worker>.workers.dev/v1/commands \
 ## 安全边界
 
 - 配对密钥只在生成时展示一次，本机仅存哈希；源码与备份中不得写入真实密钥。
-- 每条远端指令必须携带有效配对密钥、唯一编号与在有效期内的时间戳；同一编号不可重复使用。
+- 每条远端指令必须携带有效配对密钥；唯一编号与时间戳由 Worker 入队时补齐，手机端校验时间戳有效期与编号防重，同一编号不可重复使用。
 - `AI_LOCK` 只能锁定已在本机勾选的陪伴应用。
 - 用户随时可通过界面「紧急解锁」或撤销配对解除锁定；应用不尝试绕过系统后台启动与权限限制。

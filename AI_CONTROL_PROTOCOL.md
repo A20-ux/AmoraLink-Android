@@ -60,7 +60,24 @@ Current status:
 - Provider interface: placeholder only.
 - Local registration storage: placeholder only.
 - Cloud relay: implemented (Worker KV command queue; device polls `/v1/poll` and acks after handling).
+- MCP: implemented on the Worker (`POST /mcp`, Streamable HTTP, JSON-RPC 2.0); tools `lock_companion_app`, `unlock_device`, `device_status`, authenticated by Bearer pairing token.
 - Push adapters (Huawei Push Kit / FCM): not wired; the device currently relies on polling with a foreground service and alarm wake-up.
+
+## MCP endpoint
+
+`POST /mcp` accepts JSON-RPC 2.0 over Streamable HTTP. Send the pairing token in
+the `Authorization: Bearer <token>` header.
+
+Methods: `initialize`, `tools/list`, `tools/call`.
+
+| Tool | Arguments | Maps to |
+| --- | --- | --- |
+| `lock_companion_app` | `package_name` (required), `reason` (optional) | `AI_LOCK` |
+| `unlock_device` | none | `AI_UNLOCK` |
+| `device_status` | none | device online / last seen / pending queue length |
+
+The Worker fills `command_id` and `timestamp_ms` before enqueueing; the device
+still verifies token, timestamp window, and command-id dedup.
 
 Any future device push token must be sent only to a trusted backend over HTTPS.
 Never place AI pairing secrets in public source code.
